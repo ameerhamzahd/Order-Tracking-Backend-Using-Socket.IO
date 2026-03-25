@@ -201,7 +201,7 @@ export const orderHandler = (io, socket) => {
 
             const ordersCollection = getCollection("orders");
             const filter = data?.status ? { status: data.status } : {};
-            const orders = await orderCollection.find(filter).sort({ createdAt: -1 }).limit(20).toArray();
+            const orders = await ordersCollection.find(filter).sort({ createdAt: -1 }).limit(20).toArray();
 
             callback({
                 success: true,
@@ -230,7 +230,7 @@ export const orderHandler = (io, socket) => {
                 });
             }
 
-            if(!isValidStatusTransition(order.status, data.newStatus)) {
+            if (!isValidStatusTransition(order.status, data.newStatus)) {
                 return callback({
                     success: false,
                     message: "Invalid status transition"
@@ -242,7 +242,10 @@ export const orderHandler = (io, socket) => {
                     orderId: data.orderId
                 },
                 {
-                    $set: { status: data.newStatus, updatedAt: new Date() },
+                    $set: { 
+                        status: data.newStatus, 
+                        updatedAt: new Date() 
+                    },
                     $push: {
                         statusHistory: {
                             status: data.newStatus,
@@ -257,7 +260,7 @@ export const orderHandler = (io, socket) => {
                 }
             )
 
-            io.to(`order-${data.orderId}`).emit('statusUpdated', { 
+            io.to(`order-${data.orderId}`).emit('statusUpdated', {
                 orderId: data.orderId,
                 status: data.newStatus,
                 order: queryResult
@@ -276,6 +279,74 @@ export const orderHandler = (io, socket) => {
             callback({
                 success: false,
                 message: "Failed to update order status"
+            })
+        }
+    })
+
+    // ADMIN -> ACCEPT ORDER
+    socket.on("acceptOrder", async (data, callback) => {
+        try {
+            if (!socket.isAdmin) {
+                return callback({
+                    success: false,
+                    message: "Unauthorized"
+                })
+            }
+
+            const ordersCollection = getCollection("orders");
+            const order = await ordersCollection.findOne({
+                orderId: data.orderId
+            });
+
+            if (!order || order.status !== "pending") {
+                return callback({
+                    success: false,
+                    message: "Can't accept the order"
+                })
+            }
+
+            const estimatedTime = data.estimatedTime || 30;
+            const queryResult = await ordersCollection.findOneAndUpdate(
+                {
+                    orderId: data.orderId
+                },
+                {
+                    $set: { 
+                        status: "confirmed", 
+                        estimatedTime,
+                        updatedAt: new Date()  
+                    },
+                    $push: {
+                        statusHistory: {
+                            status: "confirmed",
+                            timestamp: new Date(),
+                            by: socket.id,
+                            note: `Accepted with ${estimatedTime}min estimated time`
+                        }
+                    }
+                },
+                {
+                    returnDocument: 'after'
+                }
+            )
+
+            io.to(`order-${data.orderId}`).emit('orderAccepted', {
+                orderId: data.orderId,
+                estimatedTime
+            });
+
+            socket.on("admins").emit("orderAcceptedByAdmin", {
+                orderId: data.orderId
+            });
+
+            callback({
+                success: true,
+                order: queryResult
+            });
+        } catch (error) {
+            callback({
+                success: false,
+                message: error.message
             })
         }
     })
