@@ -21,10 +21,28 @@ export function validateOrder(data) {
         }
     }
 
-    if (!Array.isArray(data.items)) {
+    if (!Array.isArray(data.items) || data.items.length === 0) {
         return {
             valid: false,
-            message: `Order must have at least one item.`
+            message: 'Order must have at least one item'
+        };
+    }
+
+    // Validate each item
+    for (let i = 0; i < data.items.length; i++) {
+        const item = data.items[i];
+
+        if (!item.name || !item.quantity || !item.price) {
+            return { 
+                valid: false, 
+                message: `Item ${i + 1} is incomplete` 
+            };
+        }
+        if (item.quantity <= 0 || item.price <= 0) {
+            return { 
+                valid: false, 
+                message: `Item ${i + 1} has invalid values` 
+            };
         }
     }
 
